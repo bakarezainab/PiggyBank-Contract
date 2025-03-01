@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.28;
+pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/proxy/Clones.sol";
+// import "@openzeppelin/contracts/proxy/Clones.sol";
+import "./Erc20.sol";
 
-error PiggyBank__AlreadyInitialized();
-error PiggyBank__NotOwner();
-error PiggyBank__AlreadyWithdrawn();
 error PiggyBank__TokenNotAllowed();
 error PiggyBank__TransferFailed();
 error PiggyBank__SavingDurationNotMet();
@@ -18,56 +16,54 @@ contract PiggyBank {
     uint256 public startTime;
     address public developer;
     bool public withdrawn;
-    bool private initialized;
 
     mapping(address => uint256) public balances;
     mapping(address => bool) public allowedTokens;
+
+    address public constant USDT = 0x...; // Replace with actual USDT address
+    address public constant USDC = 0x...; // Replace with actual USDC address
+    address public constant DAI = 0x...; // Replace with actual DAI address
 
     event Deposited(address indexed user, address indexed token, uint256 amount);
     event Withdrawn(address indexed user, address indexed token, uint256 amount);
     event EmergencyWithdraw(address indexed user, address indexed token, uint256 amount, uint256 penalty);
 
-    
-
-    modifier onlyOwner() {  
-        if (msg.sender != owner) revert PiggyBank__NotOwner();
-        _;              
-    }
-
-    modifier isWithdrawn() {
-        if (withdrawn) revert PiggyBank__AlreadyWithdrawn();
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Not the owner");
         _;
     }
 
-    constructor() {}
+    modifier isWithdrawn() {
+        require(!withdrawn, "Already withdrawn");
+        _;
+    }
 
-    function initialize(address _developer, string memory _purpose, uint256 _duration, address[] memory _tokens) external {
-        if (initialized) revert PiggyBank__AlreadyInitialized();
-        initialized = true;
+    constructor(address _developer, string memory _purpose, uint256 _duration) {
         owner = msg.sender;
         developer = _developer;
         savingPurpose = _purpose;
         savingDuration = _duration;
         startTime = block.timestamp;
-        for (uint i = 0; i < _tokens.length; i++) {
-            allowedTokens[_tokens[i]] = true;
-        }
+        allowedTokens[USDT] = true;
+        allowedTokens[USDC] = true;
+        allowedTokens[DAI] = true;
     }
 
     function deposit(address token, uint256 amount) external isWithdrawn {
-        if (!allowedTokens[token]) revert PiggyBank__TokenNotAllowed();
-        if (!IERC20(token).transferFrom(msg.sender, address(this), amount)) revert PiggyBank__TransferFailed();
+        if(!allowedTokens[token]) revert PiggyBank__TokenNotAllowed();
+        if(!IERC20(token).transferFrom(msg.sender, address(this), amount)) revert PiggyBank__TransferFailed();
         balances[token] += amount;
         emit Deposited(msg.sender, token, amount);
     }
 
     function withdraw(address token) external onlyOwner isWithdrawn {
-        if (block.timestamp < startTime + savingDuration) revert PiggyBank__SavingDurationNotMet();
+        require(block.timestamp >= startTime + savingDuration, "Saving duration not met");
+        if(block.timestamp <= startTime + savingDuration) revert PiggyBank__SavingDurationNotMet();
         uint256 amount = balances[token];
-        if (amount == 0) revert PiggyBank__NoBalance();
+        require(amount > 0, "No balance");
         balances[token] = 0;
         withdrawn = true;
-        if (!IERC20(token).transfer(owner, amount)) revert PiggyBank__TransferFailed();
+        require(IERC20(token).transfer(owner, amount), "Transfer failed");
         emit Withdrawn(owner, token, amount);
     }
 
